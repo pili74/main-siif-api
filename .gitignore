@@ -1,0 +1,18 @@
+# Dependencias de Node.js
+node_modules/
+
+# Variables de entorno y credenciales
+.env
+.env.*
+
+# Archivo actual con datos de conexión Oracle
+enviroments/enviroments.js
+
+# Logs
+*.log
+npm-debug.log*
+
+# Archivos del sistema/editor
+.DS_Store
+Thumbs.db
+.vscode/
