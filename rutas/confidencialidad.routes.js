@@ -16,4 +16,15 @@ router.post(
     confidencialidadController.verificarConfidencialidad
 );
 
+/**
+ * Registra la aceptación del acuerdo de confidencialidad.
+ *
+ * Recibe el OPEID y el LOGIN del usuario autenticado
+ * y delega el registro al controlador.
+ */
+router.post(
+    '/aceptar',
+    confidencialidadController.aceptarConfidencialidad
+);
+
 module.exports = router;

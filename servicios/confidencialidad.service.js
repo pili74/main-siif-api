@@ -81,6 +81,152 @@ class ConfidencialidadService {
             await conexion.closeConex();
         }
     }
+
+    /**
+     * Registra que un operador aceptó
+     * el acuerdo de confidencialidad del Main SIIF.
+     *
+     * Utiliza el procedimiento institucional existente
+     * PKG_CONTROLUSUARIOS.AG_INS_MENSAJE_USUARIO.
+     *
+     * MENSAJE_ID = 1 corresponde actualmente
+     * al acuerdo de confidencialidad del Main.
+     *
+     * @param {number} opeid Identificador del operador SIIF.
+     * @param {string} login Usuario que realiza la aceptación.
+     * @returns {Promise<object>} Resultado devuelto por Oracle.
+     */
+    async aceptarConfidencialidad(opeid, login) {
+
+        // Creamos el objeto que administrará la conexión Oracle.
+        const conexion = new Conexion();
+
+        try {
+
+            // Abrimos la conexión con Oracle.
+            const db = await conexion.conectar();
+
+            /*
+             * Antes de insertar volvemos a verificar si el operador
+             * ya posee una aceptación para MENSAJE_ID = 1.
+             *
+             * Esto evita que un doble clic o una segunda solicitud
+             * genere registros duplicados en MENSAJE_USUARIO.
+             */
+            const verificacion = await db.execute(
+                `SELECT COUNT(*) AS CANTIDAD
+                   FROM MENSAJE_USUARIO
+                  WHERE OPE_ID = :opeid
+                    AND MENSAJE_ID = 1`,
+                {
+                    opeid: Number(opeid)
+                }
+            );
+
+            const cantidad = verificacion.rows[0][0];
+
+            // Si ya existe una aceptación, consideramos
+            // la operación satisfecha y no insertamos otra fila.
+            if (cantidad > 0) {
+
+                return {
+                    codError: 0,
+                    menError: '',
+                    registrado: false,
+                    yaAceptado: true
+                };
+            }
+
+            /*
+             * El operador todavía no aceptó el acuerdo.
+             * Llamamos al mismo procedimiento utilizado
+             * históricamente por el Main SIIF.
+             */
+            const resultado = await db.execute(
+                `BEGIN
+                    PKG_CONTROLUSUARIOS.AG_INS_MENSAJE_USUARIO(
+                        :opeid,
+                        :mensajeId,
+                        :login,
+                        :menError,
+                        :codError
+                    );
+                 END;`,
+                {
+                    opeid: {
+                        dir: oracledb.BIND_IN,
+                        type: oracledb.NUMBER,
+                        val: Number(opeid)
+                    },
+
+                    // El acuerdo de confidencialidad actual
+                    // corresponde al MENSAJE_ID = 1.
+                    mensajeId: {
+                        dir: oracledb.BIND_IN,
+                        type: oracledb.NUMBER,
+                        val: 1
+                    },
+
+                    login: {
+                        dir: oracledb.BIND_IN,
+                        type: oracledb.STRING,
+                        val: login
+                    },
+
+                    menError: {
+                        dir: oracledb.BIND_OUT,
+                        type: oracledb.STRING,
+                        maxSize: 500
+                    },
+
+                    codError: {
+                        dir: oracledb.BIND_OUT,
+                        type: oracledb.NUMBER
+                    }
+                }
+            );
+
+            const codError = resultado.outBinds.codError;
+            const menError = resultado.outBinds.menError || '';
+
+            // El procedimiento Oracle no realiza COMMIT.
+            // Confirmamos la transacción únicamente cuando
+            // Oracle informa que la operación fue correcta.
+            if (codError === 0) {
+
+                await db.commit();
+
+                return {
+                    codError: 0,
+                    menError: '',
+                    registrado: true,
+                    yaAceptado: false
+                };
+            }
+
+            // Ante un error funcional no dejamos cambios pendientes.
+            await db.rollback();
+
+            return {
+                codError: codError,
+                menError: menError,
+                registrado: false,
+                yaAceptado: false
+            };
+
+        } catch (error) {
+
+            // El error se propaga al controller para que éste
+            // determine la respuesta HTTP correspondiente.
+            throw error;
+
+        } finally {
+
+            // Cerramos siempre la conexión Oracle.
+            await conexion.closeConex();
+        }
+    }
+
 }
 
 module.exports = new ConfidencialidadService();
